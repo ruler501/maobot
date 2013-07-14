@@ -41,7 +41,8 @@ def queueMessage(message, pid=0, private=False):
 	if private:
 		print pid
 		privQueue[pid].append(message)
-	messageQueue.append(([0]*len(connections), message))
+	else:
+		messageQueue.append(([0]*len(connections), message))
 
 def sendMessage(message):
 	queueMessage('PRIVMSG ' + chan + ' :' + message + '\r\n')
@@ -299,8 +300,8 @@ class myController(asyncore.dispatcher):
 		return len(messageQueue) > 0 or len(privQueue[self.id]) > 0
 
 	def handle_connect(self):
-		queueMessage('NICK ' + ourNick + '\r\n') #Send our Nick(Notice the Concatenation)
-		queueMessage('USER LEAP LEAPer LEAPer :LEAP IRC\r\n') #Send User Info to the server
+		queueMessage('NICK ' + ourNick + '\r\n', self.id, True) #Send our Nick(Notice the Concatenation)
+		queueMessage('USER LEAP LEAPer LEAPer :LEAP IRC\r\n', self.id, True) #Send User Info to the server
 
 	def handle_expt(self):
 		self.close() # connection failed, shutdown

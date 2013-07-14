@@ -5,3 +5,17 @@ As the bot and anyone who knows the game will tell you, the only rule of
 Mao that you can be told is that you may not discuss the game. The bot
 currently joins the efnet IRC network and the #omnimaga-games channel, 
 though it is going to get cross-network functionality later in development.
+
+Command List
+!join for joining a game
+!call <target> <rule> for calling someone on breaking a rule
+ -wrong/bad card or out of turn gives someone their card back and gives them another card
+ -wrong/bad call reverses the last call by target and gives them a card
+!view pm's you with your current hand
+!quit has you leave the current game
+!play <number> of <suit> plays that card. It is case sensitive
+!draw gives you a card
+!start creates a new game
+!order the order of players by join time
+!count <target> tells you how many cards the player has left
+!countAll tells you how many cards each person in the game has left

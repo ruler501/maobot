@@ -10,7 +10,7 @@ ops=('ruler501',)
 halfops=('CelloMello','ruler')
 userlist=[]
 
-nick = 'MaoBot' #define nick
+ourNick = 'MaoBot' #define nick
 debug = False # For debug Mode
 network = 'efnet.port80.se' #Define IRC Network
 port = 6667 #Define IRC Server Port
@@ -30,6 +30,8 @@ for suit in suits:
 deck = deque(baseDeck)
 shuffle(deck)
 playedCards = deque()
+
+print globals()
 
 def sendMessage(message):
 	irc.send('PRIVMSG ' + chan + ' :' + message + '\r\n') #Send a warning message
@@ -62,11 +64,13 @@ class Player:
 		return result[2:]
 
 def handleWrongCall(target, iteration, Log):
-	if len(ActionLog) < 1+iteration:
+	print Log
+	print iteration
+	if len(Log) < 1:
 		sendMessage('Internal error')
 		return
 	i=-1
-	for action in ActionLog[::-1]:
+	for action in Log[::-1]:
 		if action[0] == target:
 			lastAction=action
 			break
@@ -74,8 +78,7 @@ def handleWrongCall(target, iteration, Log):
 	else:
 		sendMessage(target+' has not called anything')
 		return
-	i += len(ActionLog)
-	if lastAction[1].find('bad rule') != -1 or lastAction[1].find('wrong rule') != -1:
+	if lastAction[1].find('bad call') != -1 or lastAction[1].find('wrong call') != -1:
 		handleWrongCall(lastAction[1].split()[0], iteration+1, Log[:i])
 	if lastAction[1].split()[0] in Players:
 		if iteration%2 == 0:
@@ -84,6 +87,7 @@ def handleWrongCall(target, iteration, Log):
 			if len(deck) < 1:
 				for card in playedCards:
 					deck.append(card)
+					playedCards.remove(card)
 					if len(playedCards) < 3:
 						break
 				if len(deck) < 5+len(Players):
@@ -109,10 +113,11 @@ def callRule(nick, message):
 			PlayerDict[target].deal(playedCards[-1])
 			playedCards.pop()
 		if rule.lower().find('wrong call') != -1 or rule.lower().find('bad call') != -1:
-			handleWrongCall(target, 0, ActionLog)
+			handleWrongCall(target, 0, list(ActionLog))
 		if len(deck) < 1:
 			for card in playedCards:
 				deck.append(card)
+				playedCards.remove(card)
 				if len(playedCards) < 3:
 					break
 			if len(deck) < 5+len(Players):
@@ -123,7 +128,7 @@ def callRule(nick, message):
 		PlayerDict[target].deal(deck[0])
 		deck.popleft()
 		ActionLog.append((nick,message))
-		while len(ActionLog > 25):
+		while len(ActionLog) > 25:
 			ActionLog.popleft()
 	else:
 		sendMessage('No player named ' + target)
@@ -190,6 +195,7 @@ def drawCard(nick, message):
 		if len(deck) < 1:
 			for card in playedCards:
 				deck.append(card)
+				playedCards.remove(card)
 				if len(playedCards) < 3:
 					break
 			if len(deck) < 5+len(Players):
@@ -211,6 +217,7 @@ def startGame(nick, message):
 				if len(deck) < 1:
 					for card in playedCards:
 						deck.append(card)
+						playedCards.remove(card)
 						if len(playedCards) < 3:
 							break
 					if len(deck) < 5+len(Players):
@@ -240,14 +247,16 @@ def allCardsLeft(nick, message):
 		
 def help(nick, message):
 	sendNotice(nick, '!join for joining a game')
-	sendNotice(nick, '!call <target> <rule> for calling a broken rule')
+	sendNotice(nick, '!call <target> <rule> for calling someone on breaking a rule')
+	sendNotice(nick, 'wrong/bad card or out of turn gives someone their card back and gives them another card')
+	sendNotice(nick, 'wrong/bad call reverses the last call by target and gives them a card')
 	sendNotice(nick, "!view pm's you with your current hand")
 	sendNotice(nick, '!quit has you leave the current game')
 	sendNotice(nick, '!play <number> of <suit> plays that card. It is case sensitive')
 	sendNotice(nick, '!draw gives you a card')
 	sendNotice(nick, '!start creates a new game')
 	sendNotice(nick, '!order the order of players by join time')
-	sendNotice(nick, '!cards <target> tells you how many cards the player has left')
+	sendNotice(nick, '!count <target> tells you how many cards the player has left')
 	sendNotice(nick, '!countAll tells you how many cards each person in the game has left')
 
 commands = {
@@ -261,115 +270,119 @@ commands = {
 	'help'		: help, 
 	'start'		: startGame,
 	'order'		: turnOrder,
-	'cards'		: cardsLeft,
+	'count'		: cardsLeft,
 	'countAll'	: allCardsLeft,
 	}
 
 privCommands={'kill' : killSelf}
 
-irc = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #Define  IRC Socket
-irc.connect((network,port)) #Connect to Server
-print irc.recv ( 4096 )
-irc.recv (4096) #Setting up the Buffer
-irc.send('NICK ' + nick + '\r\n') #Send our Nick(Notice the Concatenation)
-irc.send('USER LEAP LEAPer LEAPer :LEAP IRC\r\n') #Send User Info to the server
-while True: #While Connection is Active
-	data = irc.recv (4096) #Make Data the Receive Buffer
-	print data #Print the Data to the console(For debug purposes)
-	if data.find('PING') != -1: #If PING is Found in the Data
-		irc.send('PONG ' + data.split()[1] + '\r\n') #Send back a PONG
-	if data.find('End of /MOTD command.') != -1: #check for welcome message
-		irc.send('JOIN ' + chan + '\r\n') # Join the pre defined channel
-	if data.split()[1] == 'PRIVMSG': #IF PRIVMSG is in the Data Parse it
-		message = ':'.join(data.split (':')[2:]) #Split the command from the message
-		if data.split()[2] == chan: #Checking for the channel name
-			nick = data.split('!')[ 0 ].replace(':','') #The nick of the user issueing the command is taken from the hostname
-			destination = ''.join (data.split(':')[:2]).split (' ')[-2] #Destination is taken from the data
-			function = message.split()[0] #The function is the message split
-			arg= data.split( )#FInally Split the Arguments by space (arg[0] will be the actual command
-			s=0
-			newmessage=''
-			for ar in arg:
-				if s>=3:
-					newmessage+=ar
-					newmessage+=' '
-				s+=1
-			s=0
-			length=len(newmessage)-1
-			finalmessage=''
-			for char in newmessage:
-				if s==length:
-					break
-				elif not s==0:
-					finalmessage+=char
-				s+=1
-			s=0
-			finalarg=[]
-			for ar in arg:
-				if s<3:
-					finalarg.append(ar)
-				else:
-					finalarg.append(finalmessage)
-					break
-			if not nick in userlist:
-				userlist.append(nick)
-				for op in ops:
-					if nick == op:#see if the person is supposed to be an op
-						irc.send('PRIVMSG chanserv :OP '+nick+'\r\n')#make auto ops ops
-				for halfop in halfops:
-					if nick == halfop:#see if the person is supposed to ba a halfop
-						print "be a halfop"
-						irc.send('PRIVMSG chanserv :HALFOP '+nick+'\r\n')#make auto half ops halfops
-			if finalmessage[0] == '!':
-				command = finalmessage[1:].split(' ')[0]
-				if command in commands.keys():
-					test = commands[command](nick, finalmessage[2+len(command):])
-					if test == 666:
+def runBot():
+	irc = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #Define  IRC Socket
+	irc.connect((network,port)) #Connect to Server
+	print irc.recv ( 4096 )
+	irc.recv (4096) #Setting up the Buffer
+	irc.send('NICK ' + ourNick + '\r\n') #Send our Nick(Notice the Concatenation)
+	irc.send('USER LEAP LEAPer LEAPer :LEAP IRC\r\n') #Send User Info to the server
+	while True: #While Connection is Active
+		data = irc.recv (4096) #Make Data the Receive Buffer
+		print data #Print the Data to the console(For debug purposes)
+		if data.find('PING') != -1: #If PING is Found in the Data
+			irc.send('PONG ' + data.split()[1] + '\r\n') #Send back a PONG
+		if data.find('End of /MOTD command.') != -1: #check for welcome message
+			irc.send('JOIN ' + chan + '\r\n') # Join the pre defined channel
+		if data.split()[1] == 'PRIVMSG': #IF PRIVMSG is in the Data Parse it
+			message = ':'.join(data.split (':')[2:]) #Split the command from the message
+			if data.split()[2] == chan: #Checking for the channel name
+				nick = data.split('!')[ 0 ].replace(':','') #The nick of the user issueing the command is taken from the hostname
+				if nick.find(OmnomIRC) != -1:
+					continue
+				destination = ''.join (data.split(':')[:2]).split (' ')[-2] #Destination is taken from the data
+				function = message.split()[0] #The function is the message split
+				arg= data.split( )#FInally Split the Arguments by space (arg[0] will be the actual command
+				s=0
+				newmessage=''
+				for ar in arg:
+					if s>=3:
+						newmessage+=ar
+						newmessage+=' '
+					s+=1
+				s=0
+				length=len(newmessage)-1
+				finalmessage=''
+				for char in newmessage:
+					if s==length:
 						break
-		elif nick in data.split()[2]:
-			print 'thnks for the PM'
-			nick = data.split('!')[ 0 ].replace(':','') #The nick of the user issueing the command is taken from the hostname
-			destination = ''.join (data.split(':')[:2]).split (' ')[-2] #Destination is taken from the data
-			function = message.split()[0] #The function is the message split
-			arg= data.split( )#FInally Split the Arguments by space (arg[0] will be the actual command
-			s=0
-			newmessage=''
-			for ar in arg:
-				if s>=3:
-					newmessage+=ar
-					newmessage+=' '
-				s+=1
-			s=0
-			length=len(newmessage)-1
-			finalmessage=''
-			for char in newmessage:
-				if s==length:
-					break
-				elif not s==0:
-					finalmessage+=char
-				s+=1
-			s=0
-			finalarg=[]
-			for ar in arg:
-				if s<3:
-					finalarg.append(ar)
-				else:
-					finalarg.append(finalmessage)
-					break
-			if not nick in userlist:
-				userlist.append(nick)
-				for op in ops:
-					if nick == op:#see if the person is supposed to be an op
-						irc.send('PRIVMSG chanserv :OP '+nick+'\r\n')#make auto ops ops
-				for halfop in halfops:
-					if nick == halfop:#see if the person is supposed to ba a halfop
-						print "be a halfop"
-						irc.send('PRIVMSG chanserv :HALFOP '+nick+'\r\n')#make auto half ops halfops
-			if finalmessage[0] == '!':
-				command = finalmessage[1:].split(' ')[0]
-				if command in privCommands.keys():
-					test = privCommands[command](nick, finalmessage[2+len(command):])
-					if test == 666:
+					elif not s==0:
+						finalmessage+=char
+					s+=1
+				s=0
+				finalarg=[]
+				for ar in arg:
+					if s<3:
+						finalarg.append(ar)
+					else:
+						finalarg.append(finalmessage)
 						break
-		else:
-			print '.'+data.split()[2]+'.'
+				if not nick in userlist:
+					userlist.append(nick)
+					for op in ops:
+						if nick == op:#see if the person is supposed to be an op
+							irc.send('PRIVMSG chanserv :OP '+nick+'\r\n')#make auto ops ops
+					for halfop in halfops:
+						if nick == halfop:#see if the person is supposed to ba a halfop
+							print "be a halfop"
+							irc.send('PRIVMSG chanserv :HALFOP '+nick+'\r\n')#make auto half ops halfops
+				if finalmessage[0] == '!':
+					command = finalmessage[1:].split(' ')[0]
+					if command in commands.keys():
+						test = commands[command](nick, finalmessage[2+len(command):])
+						if test == 666:
+							break
+			elif ourNick in data.split()[2]:
+				nick = data.split('!')[ 0 ].replace(':','') #The nick of the user issueing the command is taken from the hostname
+				destination = ''.join (data.split(':')[:2]).split (' ')[-2] #Destination is taken from the data
+				function = message.split()[0] #The function is the message split
+				arg= data.split( )#FInally Split the Arguments by space (arg[0] will be the actual command
+				s=0
+				newmessage=''
+				for ar in arg:
+					if s>=3:
+						newmessage+=ar
+						newmessage+=' '
+					s+=1
+				s=0
+				length=len(newmessage)-1
+				finalmessage=''
+				for char in newmessage:
+					if s==length:
+						break
+					elif not s==0:
+						finalmessage+=char
+					s+=1
+				s=0
+				finalarg=[]
+				for ar in arg:
+					if s<3:
+						finalarg.append(ar)
+					else:
+						finalarg.append(finalmessage)
+						break
+				if not nick in userlist:
+					userlist.append(nick)
+					for op in ops:
+						if nick == op:#see if the person is supposed to be an op
+							irc.send('PRIVMSG chanserv :OP '+nick+'\r\n')#make auto ops ops
+					for halfop in halfops:
+						if nick == halfop:#see if the person is supposed to ba a halfop
+							print "be a halfop"
+							irc.send('PRIVMSG chanserv :HALFOP '+nick+'\r\n')#make auto half ops halfops
+				if finalmessage[0] == '!':
+					command = finalmessage[1:].split(' ')[0]
+					if command in privCommands.keys():
+						test = privCommands[command](nick, finalmessage[2+len(command):])
+						if test == 666:
+							break
+			else:
+				print '.'+data.split()[2]+'.'
+				
+runBot()

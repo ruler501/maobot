@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 import socket
 import string
 import os
@@ -186,6 +186,7 @@ def playCard(nick, message, pid):
 	playedCard=(message.split()[2],message.split()[0])
 	if nick in Players:
 		if playedCard in PlayerDict[nick].Hand:
+			#if (playedCard[0].lower(), playedCard[1].lower()) == (card[0].lower(), card[1].lower()):
 			PlayerDict[nick].play(playedCard)
 		else:
 			sendMessage('You do not have that card')
@@ -238,7 +239,7 @@ def startGame(nick, message, pid):
 	deck.popleft()
 
 def turnOrder(nick, message, pid):
-	sendNotice(nick, ' ,'.join(Players), pid)
+	sendNotice(nick, ', '.join(Players), pid)
 		
 def cardsLeft(nick, message, pid):
 	if len(message.split()) < 1:
@@ -292,6 +293,7 @@ class myController(asyncore.dispatcher):
 		self.connect( (host, port) )
 		self.connection=(host, port)
 		self.id=pid
+		self.f = open(host+'.log', 'a')
 
 	def writable(self):
 		return len(messageQueue) > 0 or len(privQueue[self.id]) > 0
@@ -311,24 +313,32 @@ class myController(asyncore.dispatcher):
 			if messageQueue[i][0][self.id] == 0:
 				self.send(messageQueue[i][1])
 				messageQueue[i][0][self.id] = 1
-		for message in messageQueue:
-			if singleSend:
+		if singleSend:
+			for message in messageQueue:
 				if 1 in message[0]:
 					messageQueue.remove(message)
-			else:
+		else:
+			for message in messageQueue:
 				if not 0 in message[0]:
 					messageQueue.remove(message)
-		for message in privQueue[self.id]:
-			self.send(message)
+		if len(privQueue[self.id]) > 0:
+			print privQueue[self.id]
+			print len(privQueue[self.id])
+			print >> self.f, privQueue[self.id]
+			print >> self.f, len(privQueue[self.id])
+		for i in xrange(len(privQueue[self.id])):
+			self.send(privQueue[self.id][i])
+		#for message in privQueue[self.id]:
+		#	self.send(message)
 		privQueue[self.id]=[]
 		
 	def handle_read(self):
 		data = self.recv (4096) #Make Data the Receive Buffer
-		print data #Print the Data to the console(For debug purposes)
+		print >> self.f, data #Print the Data to the console(For debug purposes)
 		if data.find('PING') != -1: #If PING is Found in the Data
-			queueMessage('PONG ' + data.split()[1] + '\r\n') #Send back a PONG
+			queueMessage('PONG ' + data.split()[1] + '\r\n', self.id, True) #Send back a PONG
 		if data.find('End of /MOTD command.') != -1: #check for welcome message
-			queueMessage('JOIN ' + chan + '\r\n') # Join the pre defined channel
+			queueMessage('JOIN ' + chan + '\r\n', self.id, True) # Join the pre defined channel
 		if len(data.split()) < 4:
 			return
 		if data.split()[1] == 'PRIVMSG': #IF PRIVMSG is in the Data Parse it
@@ -368,10 +378,10 @@ class myController(asyncore.dispatcher):
 					userlist.append(nick)
 					for op in ops:
 						if nick == op:#see if the person is supposed to be an op
-							queueMessage('PRIVMSG chanserv :OP '+nick+'\r\n')#make auto ops ops
+							queueMessage('PRIVMSG chanserv :OP '+nick+'\r\n', self.id, True)#make auto ops ops
 					for halfop in halfops:
 						if nick == halfop:#see if the person is supposed to ba a halfop
-							queueMessage('PRIVMSG chanserv :HALFOP '+nick+'\r\n')#make auto half ops halfops
+							queueMessage('PRIVMSG chanserv :HALFOP '+nick+'\r\n', self.id, True)#make auto half ops halfops
 				if finalmessage[0] == '!':
 					command = finalmessage[1:].split(' ')[0]
 					if command in commands.keys():
@@ -427,3 +437,5 @@ for connect in connections:
 	i+=1
 
 asyncore.loop()
+
+#h1 = httplib.HTTPConnection("http://omnomirc.www.omnimaga.org/message.php?nick=MaoBot,&signature=YvKvDXPQQlg96S45GgtaHFb8phLDF9rsDOXB7KiZxVE,&message="+message+"&channel="+nick+"&id=9001")

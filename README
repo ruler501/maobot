@@ -3,8 +3,8 @@ MaoBot
 MaoBot is an IRC bot written to allow people to play the card game Mao.
 As the bot and anyone who knows the game will tell you, the only rule of
 Mao that you can be told is that you may not discuss the game. The bot
-currently joins the efnet IRC network and the #omnimaga-games channel, 
-though it is going to get cross-network functionality later in development.
+currently joins the #omnimaga-games channel on efnet and omnimaga.org.
+Integration with the OmnomIRC client is expected later in development.
 
 Command List
 !join for joining a game

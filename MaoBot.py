@@ -16,7 +16,7 @@ network = 'efnet.port80.se' #Define IRC Network
 port = 6667 #Define IRC Server Port
 chan='#omnimaga-games'
 
-ActionLog=deque([(0,),(0,),(0,),(0,),(0,),(0,),(0,),(0,),(0,),(0,)])
+ActionLog=deque()
 Players=[]
 PlayerDict={}
 Order=False
@@ -50,15 +50,53 @@ class Player:
 		self.Hand.remove(card)
 		playedCards.append(card)
 		
+	def removeLast(self):
+		deck.append(self.Hand[-1])
+		shuffle(deck)
+		self.Hand.pop()
+		
 	def formatHand(self):
 		result = ''
 		for card in self.Hand:
 			result += ', '+card[1]+' of '+card[0]
 		return result[2:]
 
+def handleWrongCall(target, iteration, Log):
+	if len(ActionLog) < 1+iteration:
+		sendMessage('Internal error')
+		return
+	i=-1
+	for action in ActionLog[::-1]:
+		if action[0] == target:
+			lastAction=action
+			break
+		i-=1
+	else:
+		sendMessage(target+' has not called anything')
+		return
+	i += len(ActionLog)
+	if lastAction[1].find('bad rule') != -1 or lastAction[1].find('wrong rule') != -1:
+		handleWrongCall(lastAction[1].split()[0], iteration+1, Log[:i])
+	if lastAction[1].split()[0] in Players:
+		if iteration%2 == 0:
+			PlayerDict[lastAction[1].split()[0]].removeLast()
+		else:
+			if len(deck) < 1:
+				for card in playedCards:
+					deck.append(card)
+					if len(playedCards) < 3:
+						break
+				if len(deck) < 5+len(Players):
+					for card in baseDeck:
+						deck.append(card)
+				shuffle(deck)
+			PlayerDict[lastAction[1].split()[0]].deal(deck[0])
+			deck.popleft()
+	
+		
 def callRule(nick, message):
 	if len(message.split()) < 2:
-		sendMessage("Malformed call")
+		sendNotice(nick, "Malformed command. Use !call <target> <rule>")
 		return
 	if not nick in Players:
 		sendNotice(nick, "You have no power here")
@@ -66,10 +104,12 @@ def callRule(nick, message):
 	target = message.split()[0]
 	rule = message[1+len(target):]
 	if target in Players:
-		if rule.lower().find('wrong card') != -1 or rule.lower().find('bad card') != -1:
+		if rule.lower().find('wrong card') != -1 or rule.lower().find('bad card') != -1 or rule.lower().find('out of turn') != -1:
 			sendMessage(target+' gets his card back')
 			PlayerDict[target].deal(playedCards[-1])
 			playedCards.pop()
+		if rule.lower().find('wrong call') != -1 or rule.lower().find('bad call') != -1:
+			handleWrongCall(target, 0, ActionLog)
 		if len(deck) < 1:
 			for card in playedCards:
 				deck.append(card)
@@ -82,6 +122,9 @@ def callRule(nick, message):
 		sendMessage(target+' gets a nice new card')
 		PlayerDict[target].deal(deck[0])
 		deck.popleft()
+		ActionLog.append((nick,message))
+		while len(ActionLog > 25):
+			ActionLog.popleft()
 	else:
 		sendMessage('No player named ' + target)
 	rule = message.split()[1]

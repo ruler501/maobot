@@ -35,27 +35,28 @@ singleSend=True
 
 connections = (('efnet.port80.se', 6667), ('irp.irc.omnimaga.org', 6667))
 messageQueue = []
-privQueue = [None]*len(connections)
+privQueue = [[]]*len(connections)
 
-def queueMessage(message, id=0, private=False):
+def queueMessage(message, pid=0, private=False):
 	if private:
-		privQueue[id].append(message)
+		print pid
+		privQueue[pid].append(message)
 	messageQueue.append(([0]*len(connections), message))
 
 def sendMessage(message):
 	queueMessage('PRIVMSG ' + chan + ' :' + message + '\r\n')
 
 def sendNotice(nick, message, pid):
-		queueMessage('NOTICE ' + nick + ' :' + message + '\r\n', id=pid, private=True)
+		queueMessage('NOTICE ' + nick + ' :' + message + '\r\n', pid, True)
 
 class Player:
 	def __init__(self, nick):
 		self.Hand = deque()
 		self.nick = nick
 	
-	def deal(self, card):
+	def deal(self, card, pid):
 		self.Hand.append(card)
-		sendNotice(self.nick, "You have been dealt a "+card[1]+' of '+card[0], id)
+		sendNotice(self.nick, "You have been dealt a "+card[1]+' of '+card[0], pid)
 		
 	def play(self, card):
 		self.Hand.remove(card)
@@ -101,23 +102,23 @@ def handleWrongCall(target, iteration, Log):
 					for card in baseDeck:
 						deck.append(card)
 				shuffle(deck)
-			PlayerDict[lastAction[1].split()[0]].deal(deck[0])
+			PlayerDict[lastAction[1].split()[0]].deal(deck[0], pid)
 			deck.popleft()
 	
 		
-def callRule(nick, message, id):
+def callRule(nick, message, pid):
 	if len(message.split()) < 2:
-		sendNotice(nick, "Malformed command. Use !call <target> <rule>", id)
+		sendNotice(nick, "Malformed command. Use !call <target> <rule>", pid)
 		return
 	if not nick in Players:
-		sendNotice(nick, "You have no power here", id)
+		sendNotice(nick, "You have no power here", pid)
 		return
 	target = message.split()[0]
 	rule = message[1+len(target):]
 	if target in Players:
 		if rule.lower().find('wrong card') != -1 or rule.lower().find('bad card') != -1 or rule.lower().find('out of turn') != -1:
 			sendMessage(target+' gets his card back')
-			PlayerDict[target].deal(playedCards[-1])
+			PlayerDict[target].deal(playedCards[-1], pid)
 			playedCards.pop()
 		if rule.lower().find('wrong call') != -1 or rule.lower().find('bad call') != -1:
 			handleWrongCall(target, 0, list(ActionLog))
@@ -132,7 +133,7 @@ def callRule(nick, message, id):
 					deck.append(card)
 			shuffle(deck)
 		sendMessage(target+' gets a nice new card')
-		PlayerDict[target].deal(deck[0])
+		PlayerDict[target].deal(deck[0], pid)
 		deck.popleft()
 		ActionLog.append((nick,message))
 		while len(ActionLog) > 25:
@@ -141,7 +142,7 @@ def callRule(nick, message, id):
 		sendMessage('No player named ' + target)
 	rule = message.split()[1]
 	
-def joinGame(nick, message, id):
+def joinGame(nick, message, pid):
 	if not nick in Players:
 		Players.append(nick)
 		PlayerDict[nick]=Player(nick)
@@ -155,13 +156,13 @@ def joinGame(nick, message, id):
 					for card in baseDeck:
 						deck.append(card)
 				shuffle(deck)
-			PlayerDict[nick].deal(deck[0])
+			PlayerDict[nick].deal(deck[0], pid)
 			deck.popleft()
 		sendMessage('Welcome to Mao ' + nick + ' the only known rule is do not discuss the rules')
 	else:
 		sendMessage('You are already in the game')
 
-def leaveGame(nick, message, id):
+def leaveGame(nick, message, pid):
 	if nick in Players:
 		for card in PlayerDict[nick].Hand:
 			deck.append(card)
@@ -172,13 +173,13 @@ def leaveGame(nick, message, id):
 	else:
 		sendMessage('You must join a game to quit')
 
-def viewHand(nick, message, id):
+def viewHand(nick, message, pid):
 	if not nick in Players:
 		sendMessage('You are not in a game of Mao. Please join first.')
 		return
-	sendNotice(nick, PlayerDict[nick].formatHand(), id)
+	sendNotice(nick, PlayerDict[nick].formatHand(), pid)
 	
-def playCard(nick, message, id):
+def playCard(nick, message, pid):
 	if(len(message.split()) < 3):
 		sendMessage("Malformed play")
 		return
@@ -191,13 +192,13 @@ def playCard(nick, message, id):
 	else:
 		sendMessage('You are not in a game of Mao. Please join first.')
 	
-def killSelf(nick, message, id):
+def killSelf(nick, message, pid):
 	if nick in ops:
 		sys.exit()
 	else:
 		sendMessage('You have no power here')
 
-def drawCard(nick, message, id):
+def drawCard(nick, message, pid):
 	if nick in Players:
 		if len(deck) < 1:
 			for card in playedCards:
@@ -209,10 +210,10 @@ def drawCard(nick, message, id):
 				for card in baseDeck:
 					deck.append(card)
 			shuffle(deck)
-		PlayerDict[nick].deal(deck[0])
+		PlayerDict[nick].deal(deck[0], pid)
 		deck.popleft()
 
-def startGame(nick, message, id):
+def startGame(nick, message, pid):
 	for player in Players:
 		if len(PlayerDict[player].Hand) != 5:
 			for card in PlayerDict[nick].Hand:
@@ -230,16 +231,16 @@ def startGame(nick, message, id):
 						for card in baseDeck:
 							deck.append(card)
 					shuffle(deck)
-				PlayerDict[nick].deal(deck[0])
+				PlayerDict[nick].deal(deck[0], pid)
 				deck.popleft()
 	sendMessage('The game of Mao begins now')
 	sendMessage('The first card is a '+deck[0][1]+' of '+deck[0][0])
 	deck.popleft()
 
-def turnOrder(nick, message, id):
-	sendNotice(nick, ' ,'.join(Players), id)
+def turnOrder(nick, message, pid):
+	sendNotice(nick, ' ,'.join(Players), pid)
 		
-def cardsLeft(nick, message, id):
+def cardsLeft(nick, message, pid):
 	if len(message.split()) < 1:
 		sendNotice(nick, "Malformed Command")
 		return
@@ -247,23 +248,23 @@ def cardsLeft(nick, message, id):
 	if target in Players:
 		sendNotice(nick, str(len(PlayerDict[target].Hand))+' cards left')
 
-def allCardsLeft(nick, message, id):
+def allCardsLeft(nick, message, pid):
 	for target in Players:
-		sendNotice(nick, target + ' has ' + str(len(PlayerDict[target].Hand))+' cards left', id)
+		sendNotice(nick, target + ' has ' + str(len(PlayerDict[target].Hand))+' cards left', pid)
 		
-def help(nick, message, id):
-	sendNotice(nick, '!join for joining a game', id)
-	sendNotice(nick, '!call <target> <rule> for calling someone on breaking a rule', id)
-	sendNotice(nick, 'wrong/bad card or out of turn gives someone their card back and gives them another card', id)
-	sendNotice(nick, 'wrong/bad call reverses the last call by target and gives them a card', id)
-	sendNotice(nick, "!view pm's you with your current hand", id)
-	sendNotice(nick, '!quit has you leave the current game', id)
-	sendNotice(nick, '!play <number> of <suit> plays that card. It is case sensitive', id)
-	sendNotice(nick, '!draw gives you a card', id)
-	sendNotice(nick, '!start creates a new game', id)
-	sendNotice(nick, '!order the order of players by join time', id)
-	sendNotice(nick, '!count <target> tells you how many cards the player has left', id)
-	sendNotice(nick, '!countAll tells you how many cards each person in the game has left', id)
+def help(nick, message, pid):
+	sendNotice(nick, '!join for joining a game', pid)
+	sendNotice(nick, '!call <target> <rule> for calling someone on breaking a rule', pid)
+	sendNotice(nick, 'wrong/bad card or out of turn gives someone their card back and gives them another card', pid)
+	sendNotice(nick, 'wrong/bad call reverses the last call by target and gives them a card', pid)
+	sendNotice(nick, "!view pm's you with your current hand", pid)
+	sendNotice(nick, '!quit has you leave the current game', pid)
+	sendNotice(nick, '!play <number> of <suit> plays that card. It is case sensitive', pid)
+	sendNotice(nick, '!draw gives you a card', pid)
+	sendNotice(nick, '!start creates a new game', pid)
+	sendNotice(nick, '!order the order of players by join time', pid)
+	sendNotice(nick, '!count <target> tells you how many cards the player has left', pid)
+	sendNotice(nick, '!countAll tells you how many cards each person in the game has left', pid)
 
 commands = {
 	'join'		: joinGame,
@@ -285,12 +286,12 @@ privCommands={'kill' : killSelf}
 class myController(asyncore.dispatcher):
 	# time requestor (as defined in RFC 868)
 
-	def __init__(self, host, port, id):
+	def __init__(self, host, port, pid):
 		asyncore.dispatcher.__init__(self)
 		self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
 		self.connect( (host, port) )
 		self.connection=(host, port)
-		self.id=id
+		self.id=pid
 
 	def writable(self):
 		return len(messageQueue) > 0 or len(privQueue[self.id]) > 0
@@ -319,7 +320,7 @@ class myController(asyncore.dispatcher):
 					messageQueue.remove(message)
 		for message in privQueue[self.id]:
 			self.send(message)
-			privQueue[self.id].remove(message)
+		privQueue[self.id]=[]
 		
 	def handle_read(self):
 		data = self.recv (4096) #Make Data the Receive Buffer
@@ -374,7 +375,7 @@ class myController(asyncore.dispatcher):
 				if finalmessage[0] == '!':
 					command = finalmessage[1:].split(' ')[0]
 					if command in commands.keys():
-						commands[command](nick, finalmessage[2+len(command):])
+						commands[command](nick, finalmessage[2+len(command):], self.id)
 			elif ourNick in data.split()[2]:
 				nick = data.split('!')[ 0 ].replace(':','') #The nick of the user issueing the command is taken from the hostname
 				destination = ''.join (data.split(':')[:2]).split (' ')[-2] #Destination is taken from the data
@@ -415,7 +416,7 @@ class myController(asyncore.dispatcher):
 				if finalmessage[0] == '!':
 					command = finalmessage[1:].split(' ')[0]
 					if command in privCommands.keys():
-						privCommands[command](nick, finalmessage[2+len(command):])
+						privCommands[command](nick, finalmessage[2+len(command):], self.id)
 			else:
 				print '.'+data.split()[2]+'.'
 

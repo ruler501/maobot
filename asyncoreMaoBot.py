@@ -75,6 +75,20 @@ class Player:
 			result += ', '+card[1]+' of '+card[0]
 		return result[2:]
 
+def giveCard(target, pid):
+	if len(deck) < 1:
+		for card in playedCards:
+			deck.append(card)
+			playedCards.remove(card)
+			if len(playedCards) < 3:
+				break
+		if len(deck) < 5+len(Players):
+			for card in baseDeck:
+				deck.append(card)
+		shuffle(deck)
+	PlayerDict[target].deal(deck[0], pid)
+	deck.popleft()
+		
 def handleWrongCall(target, iteration, Log):
 	if len(Log) < 1:
 		sendMessage('Internal error')
@@ -94,18 +108,7 @@ def handleWrongCall(target, iteration, Log):
 		if iteration%2 == 0:
 			PlayerDict[lastAction[1].split()[0]].removeLast()
 		else:
-			if len(deck) < 1:
-				for card in playedCards:
-					deck.append(card)
-					playedCards.remove(card)
-					if len(playedCards) < 3:
-						break
-				if len(deck) < 5+len(Players):
-					for card in baseDeck:
-						deck.append(card)
-				shuffle(deck)
-			PlayerDict[lastAction[1].split()[0]].deal(deck[0], pid)
-			deck.popleft()
+			giveCard(lastAction[1].split()[0], pid)
 	
 		
 def callRule(nick, message, pid):
@@ -124,42 +127,20 @@ def callRule(nick, message, pid):
 			playedCards.pop()
 		if rule.lower().find('wrong call') != -1 or rule.lower().find('bad call') != -1:
 			handleWrongCall(target, 0, list(ActionLog))
-		if len(deck) < 1:
-			for card in playedCards:
-				deck.append(card)
-				playedCards.remove(card)
-				if len(playedCards) < 3:
-					break
-			if len(deck) < 5+len(Players):
-				for card in baseDeck:
-					deck.append(card)
-			shuffle(deck)
 		sendMessage(target+' gets a nice new card')
-		PlayerDict[target].deal(deck[0], pid)
-		deck.popleft()
+		giveCard(target, pid)
 		ActionLog.append((nick,message))
 		while len(ActionLog) > 25:
 			ActionLog.popleft()
 	else:
 		sendMessage('No player named ' + target)
-	rule = message.split()[1]
 	
 def joinGame(nick, message, pid):
 	if not nick in Players:
 		Players.append(nick)
 		PlayerDict[nick]=Player(nick)
 		for i in xrange(5):
-			if len(deck) < 1:
-				for card in playedCards:
-					deck.append(card)
-					if len(playedCards) < 3:
-						break
-				if len(deck) < 5+len(Players):
-					for card in baseDeck:
-						deck.append(card)
-				shuffle(deck)
-			PlayerDict[nick].deal(deck[0], pid)
-			deck.popleft()
+			giveCard(nick, pid)
 		sendMessage('Welcome to Mao ' + nick + ' the only known rule is do not discuss the rules')
 	else:
 		sendMessage('You are already in the game')
@@ -171,7 +152,7 @@ def leaveGame(nick, message, pid):
 		shuffle(deck)
 		Players.remove(nick)
 		del PlayerDict[nick]
-		sendMessage('Thank You for Playing')
+		sendMessage('Thank You for Playing '+nick)
 	else:
 		sendMessage('You must join a game to quit')
 
@@ -188,7 +169,6 @@ def playCard(nick, message, pid):
 	playedCard=(message.split()[2],message.split()[0])
 	if nick in Players:
 		if playedCard in PlayerDict[nick].Hand:
-			#if (playedCard[0].lower(), playedCard[1].lower()) == (card[0].lower(), card[1].lower()):
 			PlayerDict[nick].play(playedCard)
 		else:
 			sendMessage('You do not have that card')
@@ -203,43 +183,32 @@ def killSelf(nick, message, pid):
 
 def drawCard(nick, message, pid):
 	if nick in Players:
-		if len(deck) < 1:
-			for card in playedCards:
-				deck.append(card)
-				playedCards.remove(card)
-				if len(playedCards) < 3:
-					break
-			if len(deck) < 5+len(Players):
-				for card in baseDeck:
-					deck.append(card)
-			shuffle(deck)
-		PlayerDict[nick].deal(deck[0], pid)
-		deck.popleft()
+		giveCard(nick, pid)
 
 def startGame(nick, message, pid):
 	for player in Players:
 		if len(PlayerDict[player].Hand) != 5:
 			for card in PlayerDict[nick].Hand:
 				deck.append(card)
-			PlayerDict[nick].Hand=deque()
+			PlayerDict[player].Hand=deque()
 			shuffle(deck)
 			for i in xrange(5):
-				if len(deck) < 1:
-					for card in playedCards:
-						deck.append(card)
-						playedCards.remove(card)
-						if len(playedCards) < 3:
-							break
-					if len(deck) < 5+len(Players):
-						for card in baseDeck:
-							deck.append(card)
-					shuffle(deck)
-				PlayerDict[nick].deal(deck[0], pid)
-				deck.popleft()
+				giveCard(player, pid)
 	sendMessage('The game of Mao begins now')
 	sendMessage('The first card is a '+deck[0][1]+' of '+deck[0][0])
 	deck.popleft()
-
+	
+def giveCards(nick, message, pid):
+	if len(message.split()) < 2:
+		sendNotice(nick, 'Malformed Call', pid)
+		return
+	if nick in Players:
+		target = message.split()[0]
+		count = int(message.split()[1])
+		if target in Players:
+			for i in xrange(count):
+				giveCard(target, pid)
+	
 def turnOrder(nick, message, pid):
 	sendNotice(nick, ', '.join(Players), pid)
 		
@@ -264,6 +233,7 @@ def help(nick, message, pid):
 	sendNotice(nick, '!quit has you leave the current game', pid)
 	sendNotice(nick, '!play <number> of <suit> plays that card. It is case sensitive', pid)
 	sendNotice(nick, '!draw gives you a card', pid)
+	sendNotice(nick, '!give <target> <count> gives the player cards', pid)
 	sendNotice(nick, '!start creates a new game', pid)
 	sendNotice(nick, '!order the order of players by join time', pid)
 	sendNotice(nick, '!count <target> tells you how many cards the player has left', pid)
@@ -282,6 +252,7 @@ commands = {
 	'order'		: turnOrder,
 	'count'		: cardsLeft,
 	'countAll'	: allCardsLeft,
+	'give'		: giveCards,
 	}
 
 privCommands={'kill' : killSelf}
@@ -301,13 +272,10 @@ def sendOmnom(message):
 	
 
 def handleOmnom(message, private=False):
-	print 'handleOmnom'
 	if message.split(')')[0] == '(#':
 		return
 	nick=message.split('<')[1].split('>')[0]
 	realMessage=message.split('>')[1]
-	print nick
-	print realMessage
 	if realMessage[1] == '!':
 		command = realMessage[2:].split(' ')[0]
 		if private:
@@ -373,13 +341,11 @@ class myController(asyncore.dispatcher):
 		if data.find('End of /MOTD command.') != -1: #check for welcome message
 			queueMessage('JOIN ' + chan + '\r\n', self.id) # Join the pre defined channel
 		if len(data.split()) < 4:
-			print 'useless packet '+data
 			return
 		if data.split()[1] == 'PRIVMSG': #IF PRIVMSG is in the Data Parse it
 			message = ':'.join(data.split (':')[2:]) #Split the command from the message
 			if data.split()[2] == chan: #Checking for the channel name
 				nick = data.split('!')[ 0 ].replace(':','') #The nick of the user issueing the command is taken from the hostname
-				print nick
 				destination = ''.join (data.split(':')[:2]).split (' ')[-2] #Destination is taken from the data
 				function = message.split()[0] #The function is the message split
 				arg= data.split( )#FInally Split the Arguments by space (arg[0] will be the actual command

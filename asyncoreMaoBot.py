@@ -4,6 +4,8 @@ import string
 import os
 import time
 import asyncore
+from httplib import HTTPConnection
+from base64 import b64encode
 from random import shuffle
 from collections import deque
 
@@ -12,7 +14,7 @@ halfops=('CelloMello','ruler')
 userlist=[]
 
 ourNick = 'MaoBot' #define nick
-debug = False # For debug Mode
+Debug = True # For debug Mode
 network = 'efnet.port80.se' #Define IRC Network
 port = 6667 #Define IRC Server Port
 chan='#omnimaga-games'
@@ -35,11 +37,10 @@ singleSend=True
 
 connections = (('efnet.port80.se', 6667), ('irp.irc.omnimaga.org', 6667))
 messageQueue = []
-privQueue = [[]]*len(connections)
+privQueue = [[]]*(len(connections)+1)
 
-def queueMessage(message, pid=0, private=False):
-	if private:
-		print pid
+def queueMessage(message, pid=-1, private=False):
+	if pid >= 0:
 		privQueue[pid].append(message)
 	else:
 		messageQueue.append(([0]*len(connections), message))
@@ -48,7 +49,7 @@ def sendMessage(message):
 	queueMessage('PRIVMSG ' + chan + ' :' + message + '\r\n')
 
 def sendNotice(nick, message, pid):
-		queueMessage('NOTICE ' + nick + ' :' + message + '\r\n', pid, True)
+		queueMessage('NOTICE ' + nick + ' :' + message + '\r\n', pid)
 
 class Player:
 	def __init__(self, nick):
@@ -285,6 +286,38 @@ commands = {
 
 privCommands={'kill' : killSelf}
 
+def sendOmnom(message):
+	encodedNick=b64encode(message.split()[1], "-_").rstrip("=")
+	encodedMessage=b64encode(':'.join(message.split(':')[1:]), "-_").rstrip("=")
+	sendSocket=socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+	sendSocket.connect(("omnomirc.www.omnimaga.org",80))
+	ourNick=b64encode('MaoBot', "-_").rstrip("=")
+	ourSig=b64encode('YvKvDXPQQlg96S45GgtaHFb8phLDF9rsDOXB7KiZxVE,', "-_").rstrip("=")
+	path="http://omnomirc.www.omnimaga.org/message.php?nick="+ourNick+",&signature="+ourSig+"&message="+encodedMessage+"&channel="+encodedNick+"&id=9001"
+	sendSocket.send("GET "+path+" HTTP/1.1\r\nHost: omnomirc.www.omnimaga.org\r\nContent-Type: application/x-www-form-urlencoded\r\n\r\n")
+	returnData = sendSocket.recv(1024)
+	sendSocket.close()
+	return returnData
+	
+
+def handleOmnom(message, private=False):
+	print 'handleOmnom'
+	if message.split(')')[0] == '(#':
+		return
+	nick=message.split('<')[1].split('>')[0]
+	realMessage=message.split('>')[1]
+	print nick
+	print realMessage
+	if realMessage[1] == '!':
+		command = realMessage[2:].split(' ')[0]
+		if private:
+			if command in privCommands.keys():
+				privCommands[command](nick, realMessage[3+len(command):], len(connections))
+		else:
+			if command in commands.keys():
+				commands[command](nick, realMessage[3+len(command):], len(connections))
+	
+
 class myController(asyncore.dispatcher):
 	# time requestor (as defined in RFC 868)
 
@@ -300,8 +333,8 @@ class myController(asyncore.dispatcher):
 		return len(messageQueue) > 0 or len(privQueue[self.id]) > 0
 
 	def handle_connect(self):
-		queueMessage('NICK ' + ourNick + '\r\n', self.id, True) #Send our Nick(Notice the Concatenation)
-		queueMessage('USER LEAP LEAPer LEAPer :LEAP IRC\r\n', self.id, True) #Send User Info to the server
+		queueMessage('NICK ' + ourNick + '\r\n', self.id) #Send our Nick(Notice the Concatenation)
+		queueMessage('USER LEAP LEAPer LEAPer :LEAP IRC\r\n', self.id) #Send User Info to the server
 
 	def handle_expt(self):
 		self.close() # connection failed, shutdown
@@ -322,32 +355,31 @@ class myController(asyncore.dispatcher):
 			for message in messageQueue:
 				if not 0 in message[0]:
 					messageQueue.remove(message)
-		if len(privQueue[self.id]) > 0:
-			print privQueue[self.id]
-			print len(privQueue[self.id])
-			print >> self.f, privQueue[self.id]
-			print >> self.f, len(privQueue[self.id])
-		for i in xrange(len(privQueue[self.id])):
-			self.send(privQueue[self.id][i])
-		#for message in privQueue[self.id]:
-		#	self.send(message)
+		for message in privQueue[self.id]:
+			self.send(message)
 		privQueue[self.id]=[]
+		if len(privQueue[len(connections)])>0:
+			for message in privQueue[len(connections)]:
+				sendOmnom(message)
+			privQueue[len(connections)]=[]
 		
 	def handle_read(self):
 		data = self.recv (4096) #Make Data the Receive Buffer
 		print >> self.f, data #Print the Data to the console(For debug purposes)
+		if Debug:
+			print data
 		if data.find('PING') != -1: #If PING is Found in the Data
-			queueMessage('PONG ' + data.split()[1] + '\r\n', self.id, True) #Send back a PONG
+			queueMessage('PONG ' + data.split()[1] + '\r\n', self.id) #Send back a PONG
 		if data.find('End of /MOTD command.') != -1: #check for welcome message
-			queueMessage('JOIN ' + chan + '\r\n', self.id, True) # Join the pre defined channel
+			queueMessage('JOIN ' + chan + '\r\n', self.id) # Join the pre defined channel
 		if len(data.split()) < 4:
+			print 'useless packet '+data
 			return
 		if data.split()[1] == 'PRIVMSG': #IF PRIVMSG is in the Data Parse it
 			message = ':'.join(data.split (':')[2:]) #Split the command from the message
 			if data.split()[2] == chan: #Checking for the channel name
 				nick = data.split('!')[ 0 ].replace(':','') #The nick of the user issueing the command is taken from the hostname
-				if nick.find('OmnomIRC') != -1:
-					return
+				print nick
 				destination = ''.join (data.split(':')[:2]).split (' ')[-2] #Destination is taken from the data
 				function = message.split()[0] #The function is the message split
 				arg= data.split( )#FInally Split the Arguments by space (arg[0] will be the actual command
@@ -379,10 +411,13 @@ class myController(asyncore.dispatcher):
 					userlist.append(nick)
 					for op in ops:
 						if nick == op:#see if the person is supposed to be an op
-							queueMessage('PRIVMSG chanserv :OP '+nick+'\r\n', self.id, True)#make auto ops ops
+							queueMessage('PRIVMSG chanserv :OP '+nick+'\r\n', self.id)#make auto ops ops
 					for halfop in halfops:
 						if nick == halfop:#see if the person is supposed to ba a halfop
-							queueMessage('PRIVMSG chanserv :HALFOP '+nick+'\r\n', self.id, True)#make auto half ops halfops
+							queueMessage('PRIVMSG chanserv :HALFOP '+nick+'\r\n', self.id)#make auto half ops halfops
+				if nick.find('OmnomIRC') != -1:
+						handleOmnom(finalmessage, self.id)
+						return
 				if finalmessage[0] == '!':
 					command = finalmessage[1:].split(' ')[0]
 					if command in commands.keys():
@@ -420,16 +455,17 @@ class myController(asyncore.dispatcher):
 					userlist.append(nick)
 					for op in ops:
 						if nick == op:#see if the person is supposed to be an op
-							queueMessage('PRIVMSG chanserv :OP '+nick+'\r\n')#make auto ops ops
+							queueMessage('PRIVMSG chanserv :OP '+nick+'\r\n', self.id)#make auto ops ops
 					for halfop in halfops:
 						if nick == halfop:#see if the person is supposed to ba a halfop
-							queueMessage('PRIVMSG chanserv :HALFOP '+nick+'\r\n')#make auto half ops halfops
+							queueMessage('PRIVMSG chanserv :HALFOP '+nick+'\r\n', self.id)#make auto half ops halfops
+				if nick.find('OmnomIRC') != -1:
+						handleOmnom(finalmessage, self.id, True)
+						return
 				if finalmessage[0] == '!':
 					command = finalmessage[1:].split(' ')[0]
 					if command in privCommands.keys():
 						privCommands[command](nick, finalmessage[2+len(command):], self.id)
-			else:
-				print '.'+data.split()[2]+'.'
 
 i=0
 ourConnections=[]
@@ -439,4 +475,4 @@ for connect in connections:
 
 asyncore.loop()
 
-#h1 = httplib.HTTPConnection("http://omnomirc.www.omnimaga.org/message.php?nick=MaoBot,&signature=YvKvDXPQQlg96S45GgtaHFb8phLDF9rsDOXB7KiZxVE,&message="+message+"&channel="+nick+"&id=9001")
+#h1 = HTTPConnection("http://omnomirc.www.omnimaga.org/message.php?nick=MaoBot,&signature=YvKvDXPQQlg96S45GgtaHFb8phLDF9rsDOXB7KiZxVE,&message="+message+"&channel="+nick+"&id=9001")

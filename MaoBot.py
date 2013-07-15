@@ -4,7 +4,6 @@ import string
 import os
 import time
 import asyncore
-from httplib import HTTPConnection
 from base64 import b64encode
 from random import shuffle
 from collections import deque

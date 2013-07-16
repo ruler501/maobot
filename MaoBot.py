@@ -235,6 +235,10 @@ def help(nick, message, pid):
 	sendNotice(nick, '!give <target> <count> gives the player cards', pid)
 	sendNotice(nick, '!start creates a new game', pid)
 	sendNotice(nick, '!order the order of players by join time', pid)
+	sendNotice(nick, 'PM me !help to see the PM only commands', pid)
+
+def helpPM(nick, message, pid):
+	sendNotice(nick, 'These are PM only commands', pid)
 	sendNotice(nick, '!count <target> tells you how many cards the player has left', pid)
 	sendNotice(nick, '!countAll tells you how many cards each person in the game has left', pid)
 
@@ -249,15 +253,18 @@ commands = {
 	'help'		: help, 
 	'start'		: startGame,
 	'order'		: turnOrder,
-	'count'		: cardsLeft,
-	'countAll'	: allCardsLeft,
 	'give'		: giveCards,
 	}
 
-privCommands={'kill' : killSelf}
+privCommands={
+	'kill' 		: killSelf,
+	'count'		: cardsLeft,
+	'countAll'	: allCardsLeft,
+	'help'		: helpPM
+	}
 
 def sendOmnom(message):
-	encodedNick=b64encode(message.split()[1], "-_").rstrip("=")
+	encodedNick=b64encode("*"+message.split()[1], "-_").rstrip("=")
 	encodedMessage=b64encode(':'.join(message.split(':')[1:]), "-_").rstrip("=")
 	sendSocket=socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 	sendSocket.connect(("omnomirc.www.omnimaga.org",80))
@@ -270,11 +277,16 @@ def sendOmnom(message):
 	return returnData
 	
 
-def handleOmnom(message, private=False):
+def handleOmnom(message, pid, private=False):
+	if pid !=0 and singleSend and !private:
+		return
 	if message.split(')')[0] == '(#':
 		return
-	nick=message.split('<')[1].split('>')[0]
-	realMessage=message.split('>')[1]
+	try:
+		nick=message.split('<')[1].split('>')[0]
+		realMessage=message.split('>')[1]
+	except IndexError:
+		return
 	if realMessage[1] == '!':
 		command = realMessage[2:].split(' ')[0]
 		if private:
@@ -282,7 +294,10 @@ def handleOmnom(message, private=False):
 				privCommands[command](nick, realMessage[3+len(command):], len(connections))
 		else:
 			if command in commands.keys():
-				commands[command](nick, realMessage[3+len(command):], len(connections))
+				try:
+					commands[command](nick, realMessage[3+len(command):], len(connections))
+				except:
+					return
 	
 
 class myController(asyncore.dispatcher):
@@ -297,7 +312,7 @@ class myController(asyncore.dispatcher):
 		self.f = open(host+'.log', 'a')
 
 	def writable(self):
-		return len(messageQueue) > 0 or len(privQueue[self.id]) > 0
+		return len(messageQueue) > 0 or len(privQueue[self.id]) > 0 or len(privQueue[len(connections)]) > 0
 
 	def handle_connect(self):
 		queueMessage('NICK ' + ourNick + '\r\n', self.id) #Send our Nick(Notice the Concatenation)
@@ -386,7 +401,10 @@ class myController(asyncore.dispatcher):
 				if finalmessage[0] == '!':
 					command = finalmessage[1:].split(' ')[0]
 					if command in commands.keys():
-						commands[command](nick, finalmessage[2+len(command):], self.id)
+						try:
+							commands[command](nick, finalmessage[2+len(command):], self.id)
+						except:
+							return
 			elif ourNick in data.split()[2]:
 				nick = data.split('!')[ 0 ].replace(':','') #The nick of the user issueing the command is taken from the hostname
 				destination = ''.join (data.split(':')[:2]).split (' ')[-2] #Destination is taken from the data
@@ -430,7 +448,10 @@ class myController(asyncore.dispatcher):
 				if finalmessage[0] == '!':
 					command = finalmessage[1:].split(' ')[0]
 					if command in privCommands.keys():
-						privCommands[command](nick, finalmessage[2+len(command):], self.id)
+						try:
+							privCommands[command](nick, finalmessage[2+len(command):], self.id)
+						except:
+							return
 
 i=0
 ourConnections=[]
@@ -439,5 +460,3 @@ for connect in connections:
 	i+=1
 
 asyncore.loop()
-
-#h1 = HTTPConnection("http://omnomirc.www.omnimaga.org/message.php?nick=MaoBot,&signature=YvKvDXPQQlg96S45GgtaHFb8phLDF9rsDOXB7KiZxVE,&message="+message+"&channel="+nick+"&id=9001")
